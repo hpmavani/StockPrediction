@@ -1,0 +1,216 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(klaR)
+library(caret)
+library(rpart)
+library(rsample)
+library(dplyr)
+library(rpart.plot)
+library(tidyverse)
+library(TTR)
+library(randomForest)
+library(corrplot)
+library(httr)
+library(jsonlite)
+
+setwd('C:\\Users\\hiyam\\OneDrive\\Documents\\R Source\\P2')
+set.seed(12345)
+data <- read_csv('AAPL.csv')
+glimpse(data)
+nrow(data)
+
+```
+
+```{r}
+#Initial plotting of AAPL close-prices
+ggplot(data) + 
+  geom_line(aes(x = Date, y = Close, color = "Original")) + 
+  labs(title = "Time Series of AAPL Close Price", y = "Closings")
+```
+
+Feature Engineering : Calculating additional features from the initial Open, High, Close, Low features
+```{r}
+
+#calculate the RSI for a close price
+calc_RSI <- function(price, n = 14) {
+  return(RSI(price, n = n)/100); 
+}
+
+#This function turns trend strength into a vector quantity 
+#When the dmi+ line is above the dmi-  line, prices are going up --> keep adx positive
+#When the dmi- line is above the dmi+ line, prices are going down --> make adx negative
+calc_trend_strength <- function(di_p, di_n, adx) {
+    di_diff <- di_p - di_n
+    strength <- ifelse((di_p - di_n) > 0, adx, -1 *adx)
+    return(strength)
+}
+
+#When macd - signal is positive, macd > signal --> buy 
+#when macd - signal is negative, macd < signal --> sell 
+calc_macd_signal <- function(macd, signal) {
+  return(macd - signal)
+}
+
+#bollinger bands calculation: SMA +- 2std
+BB_matrix <- BBands(data$Close, n = 15, sd = 2, matype = "SMA")
+
+#MACD calculation
+macd_values <- MACD(data$Close, nFast = 12, nSlow = 26, nSig = 9, maType = "EMA", percent = FALSE)
+
+#Stochastic Oscillator: make a matrix out of the high-low-close features
+HLC <- data %>%
+  select(High, Low, Close)
+
+#Williams % Range
+wpr <- WPR(HLC, n = 14)
+
+#ADX/DMI+/DMI-
+adx_values <- ADX(HLC, n = 14, maType = "EMA")
+di_p <- adx_values[,"DIp"]
+di_n <- adx_values[, "DIn"]
+adx <- adx_values[, "ADX"]
+```
+Add columns for new features to original dataset
+```{r}
+#add columns for new features to original dataset
+#created a column for price at day d - 1 (lagged_close) --> 1 = uptrend, 0 = downtrend
+
+data <- data %>%
+  mutate(rsi = calc_RSI(data$Close, n = 14),
+         macd_signal = calc_macd_signal(macd_values[,"macd"], macd_values[,"signal"]), 
+         macd = macd_values[, "macd"],
+         signal = macd_values[,"signal"],
+         will_pr = wpr,
+         sma = SMA(data$Close, n = 14),
+         lagged_close = lag(Close, 5),
+         bb_up = BB_matrix[,"up"],
+         bb_down = BB_matrix[,"dn"],
+         trend_strength = calc_trend_strength(di_p, di_n, adx),
+         direction = ifelse(Close > lagged_close, 1, 0))
+
+data <- na.omit(data)
+
+#Fix adj close col name
+data <- data %>%
+  mutate(adj_close = `Adj Close`) %>%
+  select(-c(`Adj Close`))
+
+print(data, n = 10, width = Inf) 
+
+```
+```{r}
+close_data <- data.frame(data$Close, data$lagged_close, (data$Close - data$lagged_close))
+close_data
+```
+
+Data Exploration and Plotting
+```{r}
+#Take a subset of the data
+data_sub <- data[(nrow(data) - 100):(nrow(data)),]
+print(data_sub, n = 20)
+nrow(data_sub)
+
+#MACD
+ggplot(data_sub, aes(x = Date)) +
+  geom_line(aes(y = macd, color = "MACD")) +
+  geom_line(aes(y = signal, color = "Signal Line")) +
+  labs(title = "MACD Indicator", y = "Value", color = "Legend")
+#Close Prices
+ggplot(data_sub, aes(x = Date)) + 
+  geom_line(aes(y = Close, color = "Close")) + 
+  labs(title = "Close Prices", y = "Close Price", color = "Legend")
+
+#Examine how RSI works -- Close Price is scaled down so you can better see the patterns line up
+#When RSI touches the 70 line, it indicates a stock being overbought
+#When RSI touches the 30 line, it indicated a stock being oversold
+
+#RSI
+ggplot(data_sub, aes(x = Date)) + 
+  geom_line(aes(y = rsi*100, color = "RSI")) +
+  geom_line(aes(y = Close - 200, color = "Close")) + 
+  geom_line(y = 70, color = "blue") + 
+  geom_line(y = 30, color = "orange") +
+  labs(title = "RSI", y = "Value", color = "Legend")
+
+#ADX, DI
+#Examine ADX, DI+, DI-
+ggplot(data_sub, aes(x = Date)) + 
+  geom_line(aes(y = trend_strength, color = "ADX")) +
+  geom_line(aes(y = 0, color = "Base-Line")) + 
+  geom_line(aes(y = -50, color = "Negative Strength")) + 
+  geom_line(aes(y = 50, color = "Positive Strength")) + 
+  labs(title = "ADX", y = "Value", color = "Legend")
+
+#Williams %R
+ggplot(data_sub, aes(x = Date)) + 
+  geom_hline(yintercept = 20, color = "blue") + 
+  geom_hline(yintercept = 80, color = "orange") +
+  scale_y_reverse() + 
+  geom_line(aes(y = will_pr * 100, color = "Will_PR")) + 
+  labs(title = "Williams %R", y = "Value", color = "Legend")
+
+```
+
+```{r}
+#Make all continuous features numeric and factorize target variable
+data$rsi <- as.numeric(data$rsi)
+data$macd <- as.numeric(data$macd)
+data$signal <- as.numeric(data$signal)
+data$will_pr <- as.numeric(data$will_pr)
+data$sma <- as.numeric(data$sma)
+data$bb_up <- as.numeric(data$bb_up)
+data$bb_down <- as.numeric(data$bb_down)
+data$trend_strength <- as.numeric(data$trend_strength)
+data$direction <- as.factor(data$direction)
+
+#Remove irrelevant features
+data <- data %>%
+  select(-c(Open, High, Low, Close, adj_close))
+
+print(data, n = 15, width = Inf)
+```
+Examine correlation between features with a correlation matrix: correlations are expected
+```{r}
+
+cor_data <- data %>%
+  select(-c(Date))
+cor_matrix <- cor(cor_data[,-ncol(cor_data)])
+print(cor_matrix)
+
+corrplot(cor_matrix, method = "circle", type = "upper",
+         tl.col = "black", tl.srt = 45,
+         title = "Correlation of Stock Features", mar = c(0, 0, 1, 0))
+
+```
+Split data into training and test dataset without randomization because of time-series
+```{r}
+split_index <- floor(0.8 * nrow(data))
+training <- data[1: split_index,]
+test_data <- data[(split_index + 1):nrow(data), ]
+
+prop.table(table(training$direction))
+prop.table(table(test_data$direction))
+
+head(training)
+str(training)
+```
+RF Model with 100 trees, mtry is default
+```{r}
+rf_model <- randomForest(direction ~ rsi + macd + signal + will_pr + sma + bb_up + bb_down + trend_strength, data = training, ntree = 100, importance = TRUE)
+print(rf_model)
+
+pred <- predict(rf_model, test_data)
+confusionMatrix(pred, test_data$direction)
+importance(rf_model)
+```
+
+
+
+
+
+
