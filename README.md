@@ -1,1 +1,14 @@
-# StockPrediction
+# Stock Price Trend Classification with Random Forest
+
+## Overview 
+Many individuals aim to invest their money in stocks and take advantage of the seemingly quick, but also risky way of making money. The movement of stock prices are impacted by so many factors such as crowd sentiment, world news, macroeconomic movement, and the intrinsic value of a company’s assets. Stock analysis is divided into two main categories: fundamental and technical analysis. Fundamental analysis focuses on the broader picture; it places an emphasis on a company’s financial records and market capitalization, while technical analysis focuses on creating an almost scientific method of stock prediction that’s based on patterns, trends, and momentum of a stock’s price. Keeping track of all the indicators and signals dictated in the technical analysis of a stock can be complex and time-consuming to do by hand, which is why machine learning techniques can be used to aid this process. Techniques such as Random Forest can essentially capture all these indicators and signals as features and classify the stock price as going up or down. This kind of classification offers investors a buy or sell signal from the technical perspective of stock prediction, which they can verify with real-world sentiments to help make decisions about their investments. 
+
+## Methodology
+In this exploration of the applications of machine learning, I will focus on classifying the direction (up or down) of stocks, focusing on the stock price of Apple (AAPL). AAPL is known for its stability in the markets, which makes it a beneficial choice in this study in terms of reducing noise. The two classes are uptrend determined by 1 and downtrend determined by 0. These response variables are calculated by using a 5-day lag beteween close-prices: 
+Price_Difference = Price(i) - Price(i - 5) where i is the day in consideration. If Price_Difference is positive, this is counted as an uptrend; if negative, this is marked as a downtrend. Essentially, the model aims to see the general trend of a price over the next 5 days. This decision was made to reduce the noise that occurs when considering the price trend after just 1 day and smooth out the prices so the algorithm could perform better. 
+
+The features in consideration are several different indicators such as RSI, MACD, Williams %R, ADX, and Bollinger Bands. The main algorithm used was Random Forest, which is one of the industry standards for classification in terms of accuracy and prevention of overfitting. This project makes use of many different data science skills such as wrangling and pre-processing, feature engineering, data exploration through plots and correlation matrices, and model analysis using metrics such as accuracy, precision, specificity, sensitivity, and F1 score.  
+
+
+
+
